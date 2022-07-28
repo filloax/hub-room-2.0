@@ -8,7 +8,7 @@ The hub has the same enter costs as the regular transition room and contains 4 s
 
 ## Requirements
 
-[Stage api] (https://steamcommunity.com/workshop/filedetails/?id=1348031964) is required for hub 2.0 to work. Make sure StageAPI is loaded before requiring hub 2.0!
+[StageAPI](https://steamcommunity.com/workshop/filedetails/?id=1348031964) is required for hub 2.0 to work. Make sure StageAPI is loaded before requiring hub 2.0!
 
 ## Integrating hub room 2.0 into your mod
 
