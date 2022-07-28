@@ -1,0 +1,1 @@
+require "scripts.hubroom2.init"

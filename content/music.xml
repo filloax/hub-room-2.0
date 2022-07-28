@@ -1,0 +1,4 @@
+<music root="music/">
+	
+    <!-- Hub Room --><track name="Hub Room 2.0" path="hub2/The_Hub.ogg" loop="true" />
+</music>
