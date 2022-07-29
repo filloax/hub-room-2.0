@@ -1,6 +1,7 @@
 local hub2 = require "scripts.hubroom2"
 
 local game = Game()
+local sfx = SFXManager()
 local music = MusicManager()
 
 hub2.CustomStagesInHub2 = {}
@@ -30,6 +31,10 @@ function hub2.AddHub2ToCustomStage(stage, quadPng, levelStage)
 		QuadPng = quadPng,
 		LevelStage = levelStage
 	}
+end
+
+function hub2.SetHub2Active(isHub2Active)
+	hub2.data.isHub2Active = isHub2Active
 end
 
 function hub2.IsRepStage()
@@ -429,6 +434,11 @@ function hub2.TransformRoomToHub2()
 		--[[if hub2Slots[slot].Trapdoor == "rep" then
 			Isaac.GridSpawn(GridEntityType.GRID_TRAPDOOR, 0, room:GetGridPosition(hub2.Hub2TrapdoorSpots[slot]), true)
 		]]
+		local door = REVEL.room:GetDoor(slot)
+		if door then
+			door:Open()
+		end
+		
 		if currentHubChamber[slot].Trapdoor or currentHubChamber[slot].TrapdoorAnm2 then
 			local stageName
 			if currentHubChamber[slot].Trapdoor == "rep" then
@@ -532,6 +542,25 @@ function hub2.TransformRoomToHub2()
 			end
 		end
 	end
+end
+
+do
+	local stopClearDoorSound = false
+
+	revel:AddCallback(ModCallbacks.MC_PRE_SPAWN_CLEAN_AWARD, function()
+		if hub2.data.isHub2Active and hub2.IsTransitionRoom() and game:GetLevel():GetAbsoluteStage() < LevelStage.STAGE3_2 then
+			stopClearDoorSound = true
+			
+			return true
+		end
+	end)
+
+	revel:AddCallback(ModCallbacks.MC_POST_UPDATE, function()
+		if stopClearDoorSound then
+			sfx:Stop(SoundEffect.SOUND_DOOR_HEAVY_OPEN)
+			stopClearDoorSound = false
+		end
+	end)
 end
 
 hub2:AddCallback(ModCallbacks.MC_POST_EFFECT_UPDATE, function(_, eff)

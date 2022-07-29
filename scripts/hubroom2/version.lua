@@ -1,4 +1,4 @@
 local hub2 = require "scripts.hubroom2"
 
 hub2.Version = "Master"
-hub2.ReleaseVersion = 1
+hub2.ReleaseVersion = 2

@@ -36,10 +36,6 @@ function hub2.SetDisableSaving(disableSaving)
 	hub2.DisableSaving = disableSaving
 end
 
-function hub2.SetHub2Active(isHub2Active)
-	hub2.data.isHub2Active = isHub2Active
-end
-
 hub2:AddCallback(ModCallbacks.MC_POST_GAME_STARTED, function(_, continued)
 	if not hub2.DisableSaving and not hub2.LoadedData then
 		if hub2:HasData() then
