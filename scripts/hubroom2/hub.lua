@@ -140,7 +140,7 @@ function hub2.UpdateHub2Doors()
 				
 				if door then
 					if (door.TargetRoomType == 27 or room:GetType() == 27) and not checkedOutDoorSlots[slot] then
-						if StageAPI.InNewStage() and levelStage%2 == 0 then
+						if StageAPI.InNewStage() and levelStage%2 == 0 or not door:IsLocked() then
 							local stageName = hub2.RepHub2Quads[levelStage]:gsub("^%l", string.upper)
 							
 							local anim = door:GetSprite():GetAnimation()
@@ -490,6 +490,7 @@ function hub2.TransformRoomToHub2()
 				if grid then
 					room:RemoveGridEntity(grid:GetGridIndex(), 0, false)
 					room:Update()
+					Isaac.GridSpawn(GridEntityType.GRID_DECORATION, 0, grid.Position, true)
 				end
 				
 				local stageName = hub2.RepHub2Quads[levelStage]:gsub("^%l", string.upper)
