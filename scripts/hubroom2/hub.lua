@@ -434,7 +434,7 @@ function hub2.TransformRoomToHub2()
 		--[[if hub2Slots[slot].Trapdoor == "rep" then
 			Isaac.GridSpawn(GridEntityType.GRID_TRAPDOOR, 0, room:GetGridPosition(hub2.Hub2TrapdoorSpots[slot]), true)
 		]]
-		local door = REVEL.room:GetDoor(slot)
+		local door = room:GetDoor(slot)
 		if door then
 			door:Open()
 		end
@@ -547,7 +547,7 @@ end
 do
 	local stopClearDoorSound = false
 
-	revel:AddCallback(ModCallbacks.MC_PRE_SPAWN_CLEAN_AWARD, function()
+	hub2:AddCallback(ModCallbacks.MC_PRE_SPAWN_CLEAN_AWARD, function()
 		if hub2.data.isHub2Active and hub2.IsTransitionRoom() and game:GetLevel():GetAbsoluteStage() < LevelStage.STAGE3_2 then
 			stopClearDoorSound = true
 			
@@ -555,7 +555,7 @@ do
 		end
 	end)
 
-	revel:AddCallback(ModCallbacks.MC_POST_UPDATE, function()
+	hub2:AddCallback(ModCallbacks.MC_POST_UPDATE, function()
 		if stopClearDoorSound then
 			sfx:Stop(SoundEffect.SOUND_DOOR_HEAVY_OPEN)
 			stopClearDoorSound = false
