@@ -6,6 +6,7 @@ local music = MusicManager()
 
 hub2.CustomStagesInHub2 = {}
 hub2.CustomStagesContainingHub2 = {}
+hub2.CustomStagesWithReseeds = {}
 
 -- all params except stage are optional. 
 -- stageConditions gets called upon first entering hub2.0 for the first time each level. Returning true will add the stage to that hub2.0
@@ -31,6 +32,10 @@ function hub2.AddHub2ToCustomStage(stage, quadPng, levelStage)
 		QuadPng = quadPng,
 		LevelStage = levelStage
 	}
+end
+
+function hub2.AddHub2ReseedsToCustomStage(stage, numReseeds)
+	hub2.CustomStagesWithReseeds[stage.Name] = numReseeds
 end
 
 function hub2.SetHub2Active(isHub2Active)
@@ -590,4 +595,19 @@ function hub2.SetUpHub2Background(hubChamber)
 	sprite:LoadGraphics()
 	
 	eff:AddEntityFlags(hub2.BitOr(EntityFlag.FLAG_RENDER_FLOOR, EntityFlag.FLAG_RENDER_WALL))
+end
+
+-- Entering the rep transition room resets seeds, so some stages can benefit from reseeding to avoid duplicate level layouts
+-- Hijacks the GotCustomStage command to get reseeds in before getting send to the new stage
+local oldGotoCustomStage = StageAPI.GotoCustomStage
+StageAPI.GotoCustomStage = function(stage, ...)
+	if hub2.IsTransitionRoom() then
+		local numReseeds = hub2.CustomStagesWithReseeds[stage.Name]
+			
+		for i=1, numReseeds or math.floor(hub2.GetCorrectedLevelStage() * .5 - .5) do
+			Isaac.ExecuteCommand("reseed")
+		end
+	end
+	
+	oldGotoCustomStage(stage, ...)
 end
