@@ -73,6 +73,7 @@ hub2.Hub2CustomTrapdoors = {
 
 -- STATUES --
 
+---@type Hub2.Statue[]
 hub2.Hub2Statues = {
 	{ -- Isaac
 		StatueFrame = 0,
