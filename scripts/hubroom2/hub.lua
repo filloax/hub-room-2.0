@@ -4,38 +4,111 @@ local game = Game()
 local sfx = SFXManager()
 local music = MusicManager()
 
+---@class Hub2.Entry
+---@field Id string
+---@field Stage CustomStage
+---@field QuadPng string?
+---@field Quad string
+---@field TrapdoorAnm2 string?
+---@field TrapdoorSize integer?
+---@field Conditions (fun(): boolean)?
+---@field DisableTrapdoor boolean
+
+---@type Hub2.Entry[]
 hub2.CustomStagesInHub2 = {}
 hub2.CustomStagesContainingHub2 = {}
-hub2.CustomStagesWithReseeds = {}
 
--- all params except stage are optional. 
--- stageConditions gets called upon first entering hub2.0 for the first time each level. Returning true will add the stage to that hub2.0
-function hub2.AddCustomStageToHub2(stage, quadPng, trapdoorAnm2, trapdoorSize, stageConditions, addHub2ToStage, levelStage)
+-- Rooms of RoomType 27 are alt-path transition rooms (not present in RoomType enum)
+local ROOMTYPE_TRANSITION = 27
+
+local ROOMTYPE_HUBCHAMBER = "Hub2Chamber"
+
+hub2.ROOMTYPE_HUBCHAMBER  = ROOMTYPE_HUBCHAMBER
+
+local MAIN_CHAMBER_ID = "Hub2_MainChamber"
+
+local CustomStagesIndicesById = {}
+
+local EntryFields = {
+	"Stage", 
+	"Quad",
+	"QuadPng",
+	"TrapdoorAnm2",
+	"TrapdoorSize",
+	"Conditions",
+	"DisableTrapdoor",
+}
+
+---@param id string
+---@param stage CustomStage
+---@param quadPng? string
+---@param trapdoorAnm2? string
+---@param trapdoorSize? integer
+---@param stageConditions? fun(): boolean # gets called upon first entering hub2.0 for the first time each level. Returning true will add the stage to that hub2.0
+---@param addHub2ToStage? boolean
+---@param levelStage? LevelStage 
+---@overload fun(id: string, entry: Hub2.Entry, addHub2ToStage?: boolean, addStage?: LevelStage)
+function hub2.AddCustomStageToHub2(id, stage, quadPng, trapdoorAnm2, trapdoorSize, stageConditions, addHub2ToStage, levelStage)
 	local quad = quadPng or "gfx/backdrop/hubroom_2.0/hubquads/closet_quad.png"
 	
-	table.insert(hub2.CustomStagesInHub2, {
-		Stage = stage,
-		QuadPng = quad,
-		TrapdoorAnm2 = trapdoorAnm2 or "gfx/grid/door_11_trapdoor.anm2",
-		TrapdoorSize = trapdoorSize,
-		Conditions = stageConditions,
-		DisableTrapdoor = stage == nil
-	})
+	---@type Hub2.Entry
+	local entry
+
+	if type(stage) == "table" then
+		entry = {
+			Id = id,
+		}
+		for _, key in ipairs(EntryFields) do
+			entry[key] = stage[key]
+		end
+		addHub2ToStage = quadPng
+		levelStage = trapdoorAnm2
+	else
+		entry = {
+			Id = id,
+			Stage = stage,
+			QuadPng = quad,
+			TrapdoorAnm2 = trapdoorAnm2,
+			TrapdoorSize = trapdoorSize,
+			Conditions = stageConditions,
+			DisableTrapdoor = stage == nil
+		}
+	end
+	entry.TrapdoorAnm2 = entry.TrapdoorAnm2 or "gfx/grid/door_11_trapdoor.anm2"
+	if entry.DisableTrapdoor == nil then
+		entry.DisableTrapdoor = entry.Stage == nil
+	end
+
+	-- replace if already existing (mod reload?)
+	local index = CustomStagesIndicesById[entry.Id]
+	if index then
+		hub2.CustomStagesInHub2[index] = entry
+	else
+		index = #hub2.CustomStagesInHub2 + 1
+		hub2.CustomStagesInHub2[index] = entry
+		CustomStagesIndicesById[entry.Id] = index
+	end
 	
-	if addHub2ToStage and stage then
-		hub2.AddHub2ToCustomStage(stage, quad, levelStage)
+	if addHub2ToStage and entry.Stage then
+		hub2.AddHub2ToCustomStage(entry.Stage, entry.QuadPng, levelStage)
 	end
 end
 
+---@param stage CustomStage
 function hub2.AddHub2ToCustomStage(stage, quadPng, levelStage)
 	hub2.CustomStagesContainingHub2[stage.Name] = {
 		QuadPng = quadPng,
 		LevelStage = levelStage
 	}
-end
 
-function hub2.AddHub2ReseedsToCustomStage(stage, numReseeds)
-	hub2.CustomStagesWithReseeds[stage.Name] = numReseeds
+	-- Do not add if IsSecondStage, otherwise it would
+	-- override the entry set by the first stage
+	if stage.XLStage and not stage.IsSecondStage then
+		hub2.CustomStagesContainingHub2[stage.XLStage.Name] = {
+			QuadPng = quadPng,
+			LevelStage = levelStage + 1
+		}
+	end
 end
 
 function hub2.SetHub2Active(isHub2Active)
@@ -98,13 +171,37 @@ local function mausoleumDoorUpdate(door, isInit)
 	end
 end
 
-function hub2.IsTransitionRoom()
-	-- Rooms of RoomType 27 are alt-path transition rooms (not present in RoomType enum)
-	local altpathTransitionRoomType = 27
-	return game:GetRoom():GetType() == altpathTransitionRoomType
+---@param includeDepthsDoor? boolean
+---@return boolean
+function hub2.IsTransitionRoom(includeDepthsDoor)
+	return game:GetRoom():GetType() == ROOMTYPE_TRANSITION
+		and (includeDepthsDoor or game:GetLevel():GetStage() ~= LevelStage.STAGE3_2)
 end
 
-local checkedOutDoorSlots = {}
+local EMPTY_LAYOUT = StageAPI.CreateEmptyRoomLayout(RoomShape.ROOMSHAPE_1x1)
+local LAYOUT_NAME = "Hub2_RoomLayout"
+StageAPI.RegisterLayout(LAYOUT_NAME, EMPTY_LAYOUT)
+
+local function MakeHubChamberRoom()
+	return StageAPI.LevelRoom {
+		LayoutName = LAYOUT_NAME,
+		Shape = RoomShape.ROOMSHAPE_1x1,
+		RoomType = ROOMTYPE_HUBCHAMBER,
+		IsExtraRoom = true,
+		Music = hub2.SFX.HUB_ROOM,
+	}
+end
+
+hub2.ChamberDoor = StageAPI.CustomDoor("Hub2Chamber", "gfx/grid/hubroom_2.0/door_chamber.anm2")
+---@type table<string, CustomDoor>
+hub2.RepDoors = {
+	Downpour = StageAPI.CustomDoor("Hub2Downpour", hub2.RepHub2Doors.Downpour),
+	Mines = StageAPI.CustomDoor("Hub2Mines", hub2.RepHub2Doors.Mines),
+	Mausoleum = StageAPI.CustomDoor("Hub2Mausoleum", hub2.RepHub2Doors.Mausoleum),
+}
+
+local CheckedOutDoorSlots = {}
+
 function hub2.UpdateHub2Doors()
 	local room = game:GetRoom()
 	local level = game:GetLevel()
@@ -118,27 +215,16 @@ function hub2.UpdateHub2Doors()
 				local door = room:GetDoor(slot)
 				
 				if door then
-					if door.TargetRoomType == 27 then
+					if door.TargetRoomType == ROOMTYPE_TRANSITION then
 						hub2.Hub2BossRoomIndex = level:GetCurrentRoomIndex()
 						
-						if not checkedOutDoorSlots[slot] then
+						if not CheckedOutDoorSlots[slot] then
 							mausoleumDoorUpdate(door, true)
-							checkedOutDoorSlots[slot] = true
+
+							CheckedOutDoorSlots[slot] = true
 							
 						else
 							mausoleumDoorUpdate(door, false)
-						end
-						
-					elseif room:GetType() == 27 then
-						local sprite = door:GetSprite()
-						local anim = sprite:GetAnimation()
-		
-						sprite:Load(hub2.RepHub2Doors.Mausoleum, true)
-						sprite:Play(anim, true)
-						sprite:SetLastFrame()
-
-						if door:IsLocked() then
-							door:TryUnlock(Isaac.GetPlayer(0), true)
 						end
 					end
 				end
@@ -149,7 +235,7 @@ function hub2.UpdateHub2Doors()
 				local door = room:GetDoor(slot)
 				
 				if door then
-					if (door.TargetRoomType == 27 or room:GetType() == 27) and not checkedOutDoorSlots[slot] then
+					if door.TargetRoomType == ROOMTYPE_TRANSITION and not CheckedOutDoorSlots[slot] then
 						if StageAPI.InNewStage() and levelStage%2 == 0 or not door:IsLocked() then
 							local stageName = hub2.RepHub2Quads[levelStage]:gsub("^%l", string.upper)
 							
@@ -163,8 +249,8 @@ function hub2.UpdateHub2Doors()
 								door:TryUnlock(Isaac.GetPlayer(0), true)
 							end
 						end
-						
-						checkedOutDoorSlots[slot] = true
+
+						CheckedOutDoorSlots[slot] = true
 					end
 				end
 			end
@@ -181,6 +267,7 @@ function hub2.GetCorrectedLevelStage()
 	end
 	
 	if StageAPI.InNewStage() then
+		---@type CustomStage
 		local stage = StageAPI.GetCurrentStage()
 		
 		if hub2.CustomStagesContainingHub2[stage.Name] and hub2.CustomStagesContainingHub2[stage.Name].LevelStage then
@@ -194,19 +281,20 @@ function hub2.GetCorrectedLevelStage()
 	return levelStage
 end
 
-local hub2EmptyRoomList = StageAPI.RoomsList("Hub2.0_RoomList", {StageAPI.CreateEmptyRoomLayout(RoomShape.ROOMSHAPE_1x1)})
-
 local function generateHub2Layout(levelStage, entranceDoorSlot)
 	local level = game:GetLevel()
 	
 	local hub2Slots
 	if StageAPI.InNewStage() then
+		---@type CustomStage
 		local stage = StageAPI.GetCurrentStage()
 		if levelStage%2 == 0 then -- first floor
 			hub2Slots = {
 				{
 					[entranceDoorSlot] = {
-						Quad = hub2.CustomStagesContainingHub2[stage.Name].QuadPng,
+						-- set both, usually one of these is nil
+						Quad = hub2.CustomStagesContainingHub2[stage.Name].Quad,
+						QuadPng = hub2.CustomStagesContainingHub2[stage.Name].QuadPng,
 						BossDoor = true
 					},
 					[(entranceDoorSlot+1)%4] = {
@@ -223,7 +311,8 @@ local function generateHub2Layout(levelStage, entranceDoorSlot)
 			hub2Slots = {
 				{
 					[entranceDoorSlot] = {
-						Quad = hub2.CustomStagesContainingHub2[stage.Name].QuadPng,
+						Quad = hub2.CustomStagesContainingHub2[stage.Name].Quad,
+						QuadPng = hub2.CustomStagesContainingHub2[stage.Name].QuadPng,
 						BossDoor = true
 					},
 					[(entranceDoorSlot+1)%4] = {
@@ -297,14 +386,7 @@ local function generateHub2Layout(levelStage, entranceDoorSlot)
 		
 		-- setup LevelRoom
 		if chamberId ~= 1 then
-			local chamber = StageAPI.LevelRoom(
-				nil, 
-				hub2EmptyRoomList,
-				nil, 
-				RoomShape.ROOMSHAPE_1x1, 
-				"Hub2.0_Chamber_" .. tostring(chamberId), 
-				chamberId ~= 1
-			)
+			local chamber = MakeHubChamberRoom()
 			StageAPI.GetDefaultLevelMap():AddRoom(chamber, {RoomID = "Hub2.0_Chamber_" .. tostring(chamberId)})
 		end
 	end
@@ -340,110 +422,70 @@ local function generateHub2Layout(levelStage, entranceDoorSlot)
 	return hub2Slots
 end
 
-StageAPI.AddCallback("Hub2.0", "POST_STAGEAPI_NEW_ROOM", 1, function()
+local function WarpToMainChamber(entranceSlot)
+	hub2.LogDebug("Warping to main chamber from entrance slot ", entranceSlot)
+
+	local defaultMap = StageAPI.GetDefaultLevelMap()
+	local extraRoomData = defaultMap:GetRoomDataFromRoomID(MAIN_CHAMBER_ID)
+	local extraRoom
+
+	if not extraRoomData then
+		extraRoom = MakeHubChamberRoom()
+		extraRoomData = defaultMap:AddRoom(extraRoom, {RoomID = MAIN_CHAMBER_ID})
+	else
+		---@type LevelRoom
+		extraRoom = defaultMap:GetRoom(extraRoomData)
+	end
+
+	-- Save entrance slot, as the extra room starts with no doors
+	extraRoom.PersistentData.EntranceDoorSlot = entranceSlot
+	
+	-- -1 = instant warp
+	StageAPI.ExtraRoomTransition(
+		extraRoomData.MapID, 
+		nil, 
+		-1, 
+		StageAPI.DefaultLevelMapID,
+		(entranceSlot + 2) % 4,
+		entranceSlot
+	)
+end
+
+StageAPI.AddCallback("Hub2.0", "PRE_STAGEAPI_NEW_ROOM", 1, function()
 	local level = game:GetLevel()
 	local room = game:GetRoom()
-	
+
 	for _,eff in ipairs(hub2.Hub2StatueEffects) do
 		eff:Remove()
 	end
 	hub2.Hub2StatueEffects = {}
-	checkedOutDoorSlots = {}
+	CheckedOutDoorSlots = {}
 	
-	if room:GetType() == RoomType.ROOM_BOSS then
+	if room:GetType() == RoomType.ROOM_BOSS 
+	then
 		hub2.Hub2BossRoomIndex = level:GetCurrentRoomIndex()
 	end
-	
-	if hub2.data.isHub2Active and level:GetAbsoluteStage() < LevelStage.STAGE3_2 then
-		-- Rooms of RoomType 27 are alt-path transition rooms (not present in RoomType enum)
-		if room:GetType() == 27 then
-			hub2.CurrentSelectedHub2ChamberId = 1
-			
-			hub2.TransformRoomToHub2()
-			
-		else
-			local currentRoom = StageAPI.GetCurrentRoom()
-			local prefix = "Hub2.0_Chamber_"
-			if currentRoom and type(currentRoom.RoomType) == "string" 
-					and currentRoom.RoomType:sub(1, prefix:len()) == prefix then
-
-				local chamberIdStr = currentRoom.RoomType:gsub(prefix, "")
-				hub2.CurrentSelectedHub2ChamberId = tonumber(chamberIdStr)
-				
-				hub2.Hub2EnteredBackChambers = true
-				
-				hub2.TransformRoomToHub2()
-			end
-		end
-		
-		hub2.UpdateHub2Doors()
-	end
 end)
 
-hub2:AddCallback(ModCallbacks.MC_POST_RENDER, function()
-	if hub2.IsTransitionRoom() then
-		local musicId = music:GetCurrentMusicID()
-
-		if StageAPI.CanOverrideMusic(musicId) -- hub room music makes this returns false, among others
-		or musicId == Music.MUSIC_JINGLE_BOSS_OVER or musicId == Music.MUSIC_JINGLE_BOSS_OVER2 then
-			music:Play(hub2.SFX.HUB_ROOM, 0)
-			music:UpdateVolume()
-		end
-	end
-end)
-
-hub2:AddCallback(ModCallbacks.MC_POST_NEW_LEVEL, function()
-	hub2.Hub2Slots = nil
-	hub2.Hub2EnteredBackChambers = false
-	hub2.CurrentSelectedHub2ChamberId = 1
-	tombMausoleumDoorPayments = 0
-end)
-
-function hub2.TransformRoomToHub2()
-	local room = game:GetRoom()
-	local isFirstVisit = room:IsFirstVisit()
+---@param room Room
+---@param levelRoom LevelRoom
+---@param isFirstLoad boolean
+function hub2.LoadHub2(room, levelRoom, isFirstLoad)
 	local levelStage = hub2.GetCorrectedLevelStage()
-	
-	-- fix for fireplaces invisibly staying and blocking new grids from spawning
-	for _,ent in ipairs(Isaac.FindByType(EntityType.ENTITY_FIREPLACE)) do
-		ent:Die()
-		ent:Update()
-	end
-	
-	-- remove old room layout
-	StageAPI.ClearRoomLayout(false, true, true, isFirstVisit)
+	local entranceDoorSlot = levelRoom.PersistentData.EntranceDoorSlot
 
-	local entranceDoorSlot
-	for slot=DoorSlot.LEFT0, DoorSlot.DOWN0 do
-		if room:GetDoor(slot) then
-			entranceDoorSlot = slot
-			break
-		end
-	end
+	hub2.LogDebug("Transforming room to hub 2, entranceDoorSlot=", entranceDoorSlot, ", current ID: ", StageAPI.GetCurrentRoomID())
 	
 	if not hub2.Hub2Slots then
 		hub2.Hub2Slots = generateHub2Layout(levelStage, entranceDoorSlot)
 	end
 	
 	local currentHubChamber = hub2.Hub2Slots[hub2.CurrentSelectedHub2ChamberId]
+	hub2.LogMinor("Selected chamber ", hub2.CurrentSelectedHub2ChamberId, ", hub stage is ", levelStage)
 	hub2.SetUpHub2Background(currentHubChamber)
-	
-	if hub2.Hub2EnteredBackChambers then
-		for slot=DoorSlot.LEFT0, DoorSlot.DOWN0 do
-			room:RemoveDoor(slot)
-		end
-	end
-	
+
 	-- spawn new trapdoors
-	for slot=DoorSlot.LEFT0, DoorSlot.DOWN0 do
-		--[[if hub2Slots[slot].Trapdoor == "rep" then
-			Isaac.GridSpawn(GridEntityType.GRID_TRAPDOOR, 0, room:GetGridPosition(hub2.Hub2TrapdoorSpots[slot]), true)
-		]]
-		local door = room:GetDoor(slot)
-		if door then
-			door:Open()
-		end
-		
+	for slot=DoorSlot.LEFT0, DoorSlot.DOWN0 do	
 		if currentHubChamber[slot].Trapdoor or currentHubChamber[slot].TrapdoorAnm2 then
 			local stageName
 			if currentHubChamber[slot].Trapdoor == "rep" then
@@ -455,7 +497,6 @@ function hub2.TransformRoomToHub2()
 			local stage
 			if currentHubChamber[slot].Stage then
 				stage = currentHubChamber[slot].Stage
-				
 			else
 				stage = {
 					NormalStage = true,
@@ -465,108 +506,179 @@ function hub2.TransformRoomToHub2()
 			end
 			
 			local trapdoorEnt = StageAPI.SpawnCustomTrapdoor(
-					room:GetGridPosition(hub2.Hub2TrapdoorSpots[slot]), 
-					stage, 
-					currentHubChamber[slot].TrapdoorAnm2 or trapdoor and trapdoor.Anm2, 
-					currentHubChamber[slot].TrapdoorSize or trapdoor and trapdoor.Size or 24,
-					false
-				)
+				room:GetGridPosition(hub2.Hub2TrapdoorSpots[slot]), 
+				stage, 
+				currentHubChamber[slot].TrapdoorAnm2 or trapdoor and trapdoor.Anm2, 
+				currentHubChamber[slot].TrapdoorSize or trapdoor and trapdoor.Size or 24,
+				false
+			)
 			
 			if currentHubChamber[slot].DisableTrapdoor then
 				trapdoorEnt:GetData().IsDisabledHub2Trapdoor = true
 			end
 		end
-		
-		if currentHubChamber[slot].Door then
+
+		if currentHubChamber[slot].Door and isFirstLoad then
 			if currentHubChamber[slot].Door == 1 then
-				StageAPI.SpawnCustomDoor(
-					slot, 
-					hub2.Hub2MainChamberRoomIndex, 
-					nil, 
-					"Hub2.0_Chamber_" .. tostring(currentHubChamber[slot].Door) .. "_Door_" .. tostring(slot)
-				)
+				local mainChamberData = StageAPI.GetDefaultLevelMap():GetRoomDataFromRoomID(MAIN_CHAMBER_ID)
+
+				if mainChamberData then
+					hub2.LogDebug("Placing main chamber door (id <", MAIN_CHAMBER_ID, ">:<", mainChamberData.MapID, ">)")
+
+					StageAPI.SpawnCustomDoor(
+						slot, 
+						mainChamberData.MapID, 
+						StageAPI.DefaultLevelMapID, 
+						hub2.ChamberDoor.Name
+					)
+				else
+					hub2.Log("Error: unknown main chamber ", MAIN_CHAMBER_ID)
+				end
 				
 			else
-				local chamberRoomData = StageAPI.GetDefaultLevelMap():GetRoomDataFromRoomID("Hub2.0_Chamber_" .. tostring(currentHubChamber[slot].Door))
-				StageAPI.SpawnCustomDoor(
-					slot, 
-					chamberRoomData.MapID, 
-					StageAPI.DefaultLevelMapID, 
-					"Hub2.0_Chamber_" .. tostring(currentHubChamber[slot].Door) .. "_Door_" .. tostring(slot)
-				)
+				local roomId = "Hub2.0_Chamber_" .. tostring(currentHubChamber[slot].Door)
+				local chamberRoomData = StageAPI.GetDefaultLevelMap():GetRoomDataFromRoomID(roomId)
+				if chamberRoomData then
+					hub2.LogDebug("Placing chamber door (id <", roomId, ">:<", chamberRoomData.MapID, ">)")
+
+					StageAPI.SpawnCustomDoor(
+						slot, 
+						chamberRoomData.MapID, 
+						StageAPI.DefaultLevelMapID, 
+						hub2.ChamberDoor.Name
+					)
+				else
+					hub2.Log("Error: unknown chamber " .. roomId)
+				end
 			end
 		end
 		
-		if currentHubChamber[slot].BossDoor then
-			if hub2.Hub2EnteredBackChambers then
-			
-				-- removing old grid as game doesn't seem to do it justice in the same frame with room:RemoveDoor()
-				local grid = room:GetGridEntity(room:GetGridIndex(room:GetDoorSlotPosition(slot)))
-				if grid then
-					room:RemoveGridEntity(grid:GetGridIndex(), 0, false)
-					room:Update()
-					Isaac.GridSpawn(GridEntityType.GRID_DECORATION, 0, grid.Position, true)
-				end
-				
-				local stageName = hub2.RepHub2Quads[levelStage]:gsub("^%l", string.upper)
-				local doorDataName = "Hub2.0_Chamber_" .. tostring(currentHubChamber[slot].Door) .. "_Door_" .. tostring(slot)
-				StageAPI.CustomDoor(doorDataName, hub2.RepHub2Doors[stageName])
+		if currentHubChamber[slot].BossDoor and isFirstLoad then
+			local stageName = hub2.RepHub2Quads[levelStage]:gsub("^%l", string.upper)
+			local doorType = hub2.RepDoors[stageName]
 
-				StageAPI.SpawnCustomDoor(
-					slot, 
-					hub2.Hub2BossRoomIndex, 
-					nil, 
-					doorDataName
-				)
-				
-				hub2.Hub2EnteredBackChambers = false
-			end
+			hub2.LogDebug("Placing boss door (idx: <", hub2.Hub2BossRoomIndex, ">), has door <", doorType.Name, "> for stage name <", stageName, ">")
+
+			StageAPI.SpawnCustomDoor(
+				slot, 
+				hub2.Hub2BossRoomIndex, 
+				nil, 
+				doorType.Name
+			)
 		end
 	end
 	
 	-- spawn statues
 	if hub2.CurrentSelectedHub2ChamberId == 1 then
-		if isFirstVisit then
+		if isFirstLoad then
 			hub2.data.run.level.hub2Statues = {}
-		end
-		
-		local statueIndices = {16, 28, 106, 118}
-		for i=1, 4 do
-			local grid = hub2.GRIDENT.HUB2_STATUE:Spawn(statueIndices[i], true, false)
-			local persistData = StageAPI.GetCustomGrid(statueIndices[i], hub2.GRIDENT.HUB2_STATUE.Name).PersistentData
-			local sprite = hub2.Hub2StatueEffects[persistData.StatueEffId]:GetSprite()
-			sprite.FlipX = i%2 == 0
-			sprite.FlipY = i>2
 			
-			if isFirstVisit then
-				table.insert(hub2.data.run.level.hub2Statues, {
-					Index = statueIndices[i],
-					StatueId = persistData.StatueId,
-					IsBroken = false
-				})
+			local statueIndices = {16, 28, 106, 118}
+			for i=1, 4 do
+				---@type CustomGridEntity
+				local grid = hub2.GRIDENT.HUB2_STATUE:Spawn(statueIndices[i], true, false)
+				local persistData = StageAPI.GetCustomGrid(statueIndices[i], hub2.GRIDENT.HUB2_STATUE.Name).PersistentData
+								
+				if isFirstLoad then
+					table.insert(hub2.data.run.level.hub2Statues, {
+						Index = statueIndices[i],
+						StatueId = persistData.StatueId,
+						IsBroken = false
+					})
+				end
 			end
 		end
 	end
 end
 
-do
-	local stopClearDoorSound = false
+StageAPI.AddCallback("Hub2.0", "POST_ROOM_LOAD", 1, function(currentRoom, isFirstLoad, isExtraRoom)
+	if currentRoom:GetType() ~= ROOMTYPE_HUBCHAMBER then
+		return
+	end
 
-	hub2:AddCallback(ModCallbacks.MC_PRE_SPAWN_CLEAN_AWARD, function()
-		if hub2.data.isHub2Active and hub2.IsTransitionRoom() and game:GetLevel():GetAbsoluteStage() < LevelStage.STAGE3_2 then
-			stopClearDoorSound = true
+	local room = game:GetRoom()
+	if currentRoom.LevelIndex == MAIN_CHAMBER_ID then
+		hub2.CurrentSelectedHub2ChamberId = 1
+	else
+		local currentRoom = StageAPI.GetCurrentRoom()
+		local roomId = currentRoom.LevelIndex
+		local prefix = "Hub2.0_Chamber_"
+		local chamberIdStr = roomId:gsub(prefix, "")
+
+		hub2.CurrentSelectedHub2ChamberId = tonumber(chamberIdStr)
+	end	
+
+	hub2.LoadHub2(room, currentRoom, isFirstLoad)
+
+	-- Handle seeds, as entering the transition DOOR (regardless of actual targeted room,
+	-- so even here where it's actually a separate grid index altogether) will make the
+	-- seeds reset
+
+	local seeds = game:GetSeeds()
+	local numReseeds = math.floor(hub2.GetCorrectedLevelStage() * .5 - .5) * 5
+	hub2.LogDebug("Trying to reset seeds ", numReseeds, " times")
+	for i = 1, numReseeds do
+		seeds:GetNextSeed()
+		for name, v in pairs(StageAPI.StageOverride) do
+			seeds:ForgetStageSeed(v.OverrideStage)
+		end
+	end
+end)
+
+-- Separate callback for recursion reasons
+hub2:AddCallback(ModCallbacks.MC_POST_NEW_ROOM, function()
+	local room = game:GetRoom()
+
+	if hub2.data.isHub2Active and game:GetLevel():GetAbsoluteStage() < LevelStage.STAGE3_2 then
+		hub2.UpdateHub2Doors()
+	end
+
+	if hub2.IsTransitionRoom() then
+		local slot
+		for slot2 = 0, DoorSlot.NUM_DOOR_SLOTS - 1 do
+			if REVEL.room:GetDoor(slot2) then
+				slot = slot2
+				break
+			end
+		end
+
+		hub2.LogMinor("Entered replaced transition room, warping to hub (slot: ", slot, ")...")
+		WarpToMainChamber(slot)
+	end
+end)
+
+hub2:AddCallback(ModCallbacks.MC_POST_UPDATE, function()
+	local room = game:GetRoom()
+	if room:GetType() == RoomType.ROOM_BOSS
+	and room:IsClear() then
+		hub2.UpdateHub2Doors()
+	end
+end)
+
+hub2:AddCallback(ModCallbacks.MC_POST_NEW_LEVEL, function()
+	hub2.Hub2Slots = nil
+	hub2.CurrentSelectedHub2ChamberId = 1
+	tombMausoleumDoorPayments = 0
+end)
+
+-- do
+-- 	local stopClearDoorSound = false
+
+-- 	hub2:AddCallback(ModCallbacks.MC_PRE_SPAWN_CLEAN_AWARD, function()
+-- 		if hub2.data.isHub2Active and hub2.IsTransitionRoom() and game:GetLevel():GetAbsoluteStage() < LevelStage.STAGE3_2 then
+-- 			stopClearDoorSound = true
 			
-			return true
-		end
-	end)
+-- 			return true
+-- 		end
+-- 	end)
 
-	hub2:AddCallback(ModCallbacks.MC_POST_UPDATE, function()
-		if stopClearDoorSound then
-			sfx:Stop(SoundEffect.SOUND_DOOR_HEAVY_OPEN)
-			stopClearDoorSound = false
-		end
-	end)
-end
+-- 	hub2:AddCallback(ModCallbacks.MC_POST_UPDATE, function()
+-- 		if stopClearDoorSound then
+-- 			sfx:Stop(SoundEffect.SOUND_DOOR_HEAVY_OPEN)
+-- 			stopClearDoorSound = false
+-- 		end
+-- 	end)
+-- end
 
 hub2:AddCallback(ModCallbacks.MC_POST_EFFECT_UPDATE, function(_, eff)
 	if eff:GetData().IsDisabledHub2Trapdoor then -- forces the trapdoor to stay closed
@@ -577,6 +689,7 @@ hub2:AddCallback(ModCallbacks.MC_POST_EFFECT_UPDATE, function(_, eff)
 	end
 end, StageAPI.E.Trapdoor.V)
 
+---@param hubChamber table<integer, Hub2.Entry>
 function hub2.SetUpHub2Background(hubChamber)
 	local room = game:GetRoom()
 	local eff = Isaac.Spawn(EntityType.ENTITY_EFFECT, 6, 0, room:GetTopLeftPos(), Vector.Zero, nil)
@@ -595,19 +708,4 @@ function hub2.SetUpHub2Background(hubChamber)
 	sprite:LoadGraphics()
 	
 	eff:AddEntityFlags(hub2.BitOr(EntityFlag.FLAG_RENDER_FLOOR, EntityFlag.FLAG_RENDER_WALL))
-end
-
--- Entering the rep transition room resets seeds, so some stages can benefit from reseeding to avoid duplicate level layouts
--- Hijacks the GotCustomStage command to get reseeds in before getting send to the new stage
-local oldGotoCustomStage = StageAPI.GotoCustomStage
-StageAPI.GotoCustomStage = function(stage, ...)
-	if hub2.IsTransitionRoom() then
-		local numReseeds = hub2.CustomStagesWithReseeds[stage.Name]
-			
-		for i=1, numReseeds or math.floor(hub2.GetCorrectedLevelStage() * .5 - .5) do
-			Isaac.ExecuteCommand("reseed")
-		end
-	end
-	
-	oldGotoCustomStage(stage, ...)
 end

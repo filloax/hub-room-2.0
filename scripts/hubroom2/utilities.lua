@@ -2,6 +2,40 @@ local hub2 = require "scripts.hubroom2"
 
 local game = Game()
 
+hub2.LOG_ALL = false
+
+local function Concat(...)
+    local num = select("#", ...)
+    local args = {...}
+    local out = ""
+    for i = 1, num do
+        out = out .. tostring(args[i])
+    end
+    return out
+end
+
+function hub2.Log(...)
+    local a = Concat(...)
+    Isaac.DebugString("[Hub 2] " .. a)
+    Isaac.ConsoleOutput("[Hub 2] " .. a .. "\n")
+end
+
+function hub2.LogMinor(...)
+    local a = Concat(...)
+    Isaac.DebugString("[Hub 2] " .. a)
+    if hub2.LOG_ALL then
+        Isaac.ConsoleOutput("[Hub 2] " .. a .. "\n")
+    end
+end
+
+function hub2.LogDebug(...)
+    if hub2.LOG_ALL then
+        local a = Concat(...)
+        Isaac.DebugString("[Hub 2] " .. a)
+        -- Isaac.ConsoleOutput("[Hub 2] " .. a .. "\n")
+    end
+end
+
 function hub2.HasBit(x, p)
     if not x or not p then
         error("HasBit | x or p nil: " .. tostring(x) .. ":" .. tostring(p), 2)

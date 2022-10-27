@@ -3,12 +3,40 @@ local hub2 = require "scripts.hubroom2"
 local game = Game()
 local sfx = SFXManager()
 
+---@class Hub2.Statue
+---@field Id string
+---@field SoulDrop Card
+---@field TrinketDrop TrinketType
+---@field ConsumableCount integer?
+---@field WispCount integer?
+---@field FlyCount integer?
+---@field SpiderCount integer?
+---@field ConsumableDrop {Variant: integer?, SubType?: integer}? # Required if ConsumableCount > 0
+---@field StatueAnm2 string?
+---@field StatueAnimation string?
+---@field StatueFrame integer?
+---@field AltStatueAnm2 string?
+---@field AltStatueAnimation string?
+---@field AltStatueFrame integer?
+---@field AltConditions (fun(): boolean)?
+
 hub2.Hub2StatuesDropChance = .25
 hub2.Hub2StatuesDropSoulChance = .2 -- hub2.Hub2StatuesDropChance first has to be true before this gets called, and such the chance will be lower
 hub2.Hub2StatueEffects = {}
 
+---@param statueData Hub2.Statue
 function hub2.AddHub2Statue(statueData)
-	table.insert(hub2.Hub2Statues, statueData)
+	local index
+	for i, statue in ipairs(hub2.Hub2Statues) do
+		if statue.Id == statueData.Id then
+			index = i
+			break
+		end
+	end
+	if not index then
+		index = #hub2.Hub2Statues + 1
+	end
+	hub2.Hub2Statues[index] = statueData
 end
 
 StageAPI.AddCallback("Hub2.0", "POST_SPAWN_CUSTOM_GRID", 1, function(customGrid)
@@ -49,7 +77,12 @@ StageAPI.AddCallback("Hub2.0", "POST_SPAWN_CUSTOM_GRID", 1, function(customGrid)
 	eff:GetData().Hub2StatueEffect = true
 	local sprite = eff:GetSprite()
 	sprite:Load("gfx/backdrop/hubroom_2.0/hub_2.0_statues.anm2", true)
-	
+
+	local c = room:GetCenterPos()
+	sprite.FlipX = eff.Position.X > c.X
+	sprite.FlipY = eff.Position.Y > c.Y
+
+
 	table.insert(hub2.Hub2StatueEffects, eff)
 	persistData.StatueEffId = #hub2.Hub2StatueEffects
 	
@@ -93,6 +126,7 @@ StageAPI.AddCallback("Hub2.0", "POST_CUSTOM_GRID_UPDATE", 1, function(customGrid
 	local persistData = customGrid.PersistentData
 	
 	if not persistData.IsStatueBroken then
+		---@type Hub2.Statue
 		local statue = hub2.Hub2Statues[persistData.StatueId]
 		local gridPosition = room:GetGridPosition(spawnIndex)
 		local statueBreaks = false
