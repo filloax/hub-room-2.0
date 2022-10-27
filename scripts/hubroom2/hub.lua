@@ -171,8 +171,11 @@ local function mausoleumDoorUpdate(door, isInit)
 	end
 end
 
-function hub2.IsTransitionRoom()
+---@param includeDepthsDoor? boolean
+---@return boolean
+function hub2.IsTransitionRoom(includeDepthsDoor)
 	return game:GetRoom():GetType() == ROOMTYPE_TRANSITION
+		and (includeDepthsDoor or game:GetLevel():GetStage() ~= LevelStage.STAGE3_2)
 end
 
 local EMPTY_LAYOUT = StageAPI.CreateEmptyRoomLayout(RoomShape.ROOMSHAPE_1x1)
@@ -630,7 +633,7 @@ hub2:AddCallback(ModCallbacks.MC_POST_NEW_ROOM, function()
 		hub2.UpdateHub2Doors()
 	end
 
-	if room:GetType() == ROOMTYPE_TRANSITION then
+	if hub2.IsTransitionRoom() then
 		local slot
 		for slot2 = 0, DoorSlot.NUM_DOOR_SLOTS - 1 do
 			if REVEL.room:GetDoor(slot2) then
