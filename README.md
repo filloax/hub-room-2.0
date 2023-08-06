@@ -90,3 +90,7 @@ hub2.AddHub2Statue(statueData)
 	- ``SpiderCount``: Integer. Statue drops a number of blue spiders as consumables drop. Optional.
 
 Statues currently have a 25% chance of dropping something when bombed.
+
+## Credits
+
+Originally created by Sentinel, currently mantained by Filloax. Contributions also from Guwahavel, Kittenchilly, and other modders.
