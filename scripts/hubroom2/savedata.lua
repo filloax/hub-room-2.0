@@ -1,7 +1,7 @@
 local hub2 = require "scripts.hubroom2"
-
 local json = require "json"
-local hasRunDataResetThisFrame = false
+
+local HasRunDataResetThisFrame = false
 
 hub2.DisableSaving = false
 hub2.LoadedData = false
@@ -18,17 +18,78 @@ hub2.DefaultData = {
 	isHub2Active = true
 }
 
-hub2.data = hub2.DefaultData
-
-function hub2.GetSaveData()
-	return hub2.data
+local function deepcopy(orig)
+    local orig_type = type(orig)
+    local copy
+	if orig_type == 'table' then
+        copy = {}
+        for orig_key, orig_value in next, orig, nil do
+            copy[deepcopy(orig_key)] = deepcopy(orig_value)
+        end
+        setmetatable(copy, deepcopy(getmetatable(orig)))
+    else -- number, string, boolean, etc
+        copy = orig
+    end
+    return copy
 end
 
-function hub2.LoadSaveData(newSaveTable)
-	hub2.data = newSaveTable
-	
-	if hasRunDataResetThisFrame then
-		hub2.data.run = hub2.DefaultData.run
+hub2.data = deepcopy(hub2.DefaultData)
+
+---@param stringifyIds? boolean If should convert int-key tables to string-key tables (for example redundant when passed to StageAPI serialization)
+---@return table
+function hub2.GetSaveData(stringifyIds)
+	local data = {
+		run = {
+			level = {},
+			unlockedTrinkets = {},
+			unlockedCards = {},
+			trinketHistory = hub2.data.run.trinketHistory,
+		},
+		isHub2Active = hub2.data.isHub2Active,
+	}
+	for _, t in ipairs({"unlockedTrinkets", "unlockedCards"}) do
+		for k, v in pairs(hub2.data.run[t]) do
+			if stringifyIds then
+				data.run[t][tostring(k)] = v
+			else
+				data.run[t][k] = v
+			end
+		end
+	end
+	return data
+end
+
+---@param newSaveTable table Loaded data passed from another mod
+---@param stringifyIds? boolean If should convert saved string-key tables to int-key tables (for example redundant when passed to StageAPI serialization)
+function hub2.LoadSaveData(newSaveTable, stringifyIds)
+	local data = {
+		run = {
+			level = {},
+			unlockedTrinkets = {},
+			unlockedCards = {},
+			trinketHistory = newSaveTable.run.trinketHistory,
+		},
+		isHub2Active = newSaveTable.isHub2Active,
+	}
+
+	for _, t in ipairs({"unlockedTrinkets", "unlockedCards"}) do
+		for k, v in pairs(newSaveTable.run[t]) do
+			if stringifyIds then
+				data.run[t][tonumber(k)] = v
+			else -- check for stringified ids anyways for backwards compat
+				if type(k) == "string" then
+					data.run[t][tonumber(k)] = v
+				else
+					data.run[t][k] = v
+				end
+			end
+		end
+	end
+
+	hub2.data = data
+
+	if HasRunDataResetThisFrame then
+		hub2.data.run = deepcopy(hub2.DefaultData.run)
 	end
 end
 
@@ -39,21 +100,21 @@ end
 hub2:AddCallback(ModCallbacks.MC_POST_GAME_STARTED, function(_, continued)
 	if not hub2.DisableSaving and not hub2.LoadedData then
 		if hub2:HasData() then
-			hub2.data = json.decode(Isaac.LoadModData(hub2))
+			hub2.LoadSaveData(json.decode(Isaac.LoadModData(hub2)), true)
 		end
 		
 		hub2.LoadedData = true
 	end
 	
 	if not continued then
-		hasRunDataResetThisFrame = true
+		HasRunDataResetThisFrame = true
 		hub2.data.run = hub2.DefaultData.run
 	end
 end)
 
 hub2:AddCallback(ModCallbacks.MC_PRE_GAME_EXIT, function()
 	if not hub2.DisableSaving then
-		Isaac.SaveModData(hub2, json.encode(hub2.data))
+		Isaac.SaveModData(hub2, json.encode(hub2.GetSaveData(true)))
 	end
 end)
 
@@ -62,5 +123,5 @@ hub2:AddCallback(ModCallbacks.MC_POST_NEW_LEVEL, function()
 end)
 
 hub2:AddCallback(ModCallbacks.MC_POST_UPDATE, function()
-	hasRunDataResetThisFrame = false
+	HasRunDataResetThisFrame = false
 end)
