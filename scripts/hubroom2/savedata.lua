@@ -38,51 +38,63 @@ hub2.data = deepcopy(hub2.DefaultData)
 ---@param stringifyIds? boolean If should convert int-key tables to string-key tables (for example redundant when passed to StageAPI serialization)
 ---@return table
 function hub2.GetSaveData(stringifyIds)
-	local data = {
-		run = {
-			level = {},
-			unlockedTrinkets = {},
-			unlockedCards = {},
-			trinketHistory = hub2.data.run.trinketHistory,
-		},
-		isHub2Active = hub2.data.isHub2Active,
-	}
-	for _, t in ipairs({"unlockedTrinkets", "unlockedCards"}) do
-		for k, v in pairs(hub2.data.run[t]) do
-			if stringifyIds then
-				data.run[t][tostring(k)] = v
-			else
-				data.run[t][k] = v
-			end
-		end
+	if stringifyIds then
+		return StageAPI.SaveTableMarshal(hub2.data, "Hub2Data")
+	else
+		return deepcopy(hub2.data)
 	end
-	return data
+end
+
+
+local function convertOldStringIndices(tbl, path)
+    local t = tbl
+    local parts = {}
+    for part in path:gmatch("[^.]+") do
+        table.insert(parts, part)
+    end
+
+    for i = 1, #parts - 1 do
+        t = t[parts[i]]
+    end
+
+    local target = parts[#parts]
+    local targetTable = t[target]
+
+    if targetTable then
+        local isAllKeysNumbers = true
+        local newTable = {}
+
+        for k, v in pairs(targetTable) do
+            if type(k) ~= "number" then
+                isAllKeysNumbers = false
+                break
+            end
+
+            newTable[k] = v
+        end
+
+        if isAllKeysNumbers then
+            t[target] = newTable
+        end
+    end
 end
 
 ---@param newSaveTable table Loaded data passed from another mod
 ---@param stringifyIds? boolean If should convert saved string-key tables to int-key tables (for example redundant when passed to StageAPI serialization)
 function hub2.LoadSaveData(newSaveTable, stringifyIds)
-	local data = {
-		run = {
-			level = {},
-			unlockedTrinkets = {},
-			unlockedCards = {},
-			trinketHistory = newSaveTable.run.trinketHistory,
-		},
-		isHub2Active = newSaveTable.isHub2Active,
-	}
+	local data
+	if stringifyIds then
+		data = StageAPI.SaveTableUnmarshal(hub2.data, "Hub2Data")
+	else
+		data = deepcopy(newSaveTable)
 
-	for _, t in ipairs({"unlockedTrinkets", "unlockedCards"}) do
-		for k, v in pairs(newSaveTable.run[t]) do
-			if stringifyIds then
-				data.run[t][tonumber(k)] = v
-			else -- check for stringified ids anyways for backwards compat
-				if type(k) == "string" then
-					data.run[t][tonumber(k)] = v
-				else
-					data.run[t][k] = v
-				end
-			end
+		-- double check for string tables (old version data)
+		for _, v in ipairs({
+			"run.unlockedTrinkets",
+			"run.unlockedCards",
+			"run.level.hub2Statues",
+		}) do
+			convertOldStringIndices(data, v)
 		end
 	end
 
