@@ -1,8 +1,12 @@
 local hub2 = require "scripts.hubroom2"
+local Callbacks = require "scripts.hubroom2.callbacks"
 
 local game = Game()
 local sfx = SFXManager()
 local music = MusicManager()
+
+local STAGEAPI_POST_ROOM_LOAD = "POST_ROOM_LOAD"
+local STAGEAPI_PRE_STAGEAPI_NEW_ROOM = "PRE_STAGEAPI_NEW_ROOM"
 
 ---@class Hub2.Entry
 ---@field Id string
@@ -262,7 +266,7 @@ function hub2.UpdateHub2Doors()
 			local door = room:GetDoor(slot)
 			if door and door.TargetRoomType == ROOMTYPE_TRANSITION then
 				room:RemoveDoor(slot)
-				hub2.LogMinor("Removed Door at slot ", slot)
+				hub2.LogMinor("Hub: Removed transition Door at slot ", slot)
 			end
 		end
 		return
@@ -485,8 +489,13 @@ local function generateHub2Layout(levelStage, entranceDoorSlot)
 	return hub2Slots
 end
 
+local StartedWarpToMainChamber = false
+
 local function WarpToMainChamber(entranceSlot)
 	hub2.LogDebug("Warping to main chamber from entrance slot ", entranceSlot)
+
+	Isaac.RunCallback(Callbacks.PRE_WARP_TO_HUB, entranceSlot)
+	StartedWarpToMainChamber = true
 
 	local defaultMap = StageAPI.GetDefaultLevelMap()
 	local extraRoomData = defaultMap:GetRoomDataFromRoomID(MAIN_CHAMBER_ID)
@@ -514,7 +523,7 @@ local function WarpToMainChamber(entranceSlot)
 	)
 end
 
-StageAPI.AddCallback("Hub2.0", "PRE_STAGEAPI_NEW_ROOM", 1, function()
+StageAPI.AddCallback("Hub2.0", STAGEAPI_PRE_STAGEAPI_NEW_ROOM, 1, function()
 	local level = game:GetLevel()
 	local room = game:GetRoom()
 
@@ -536,6 +545,11 @@ end)
 function hub2.LoadHub2(room, levelRoom, isFirstLoad)
 	local levelStage = hub2.GetCorrectedLevelStage()
 	local entranceDoorSlot = levelRoom.PersistentData.EntranceDoorSlot
+
+	if StartedWarpToMainChamber then
+		StartedWarpToMainChamber = false
+		Isaac.RunCallback(Callbacks.POST_WARP_TO_HUB, room, levelRoom, isFirstLoad, levelStage)
+	end
 
 	hub2.LogDebug("Transforming room to hub 2, entranceDoorSlot=", entranceDoorSlot, ", current ID: ", StageAPI.GetCurrentRoomID())
 	
@@ -665,7 +679,7 @@ function hub2.LoadHub2(room, levelRoom, isFirstLoad)
 	end
 end
 
-StageAPI.AddCallback("Hub2.0", "POST_ROOM_LOAD", 1, function(currentRoom, isFirstLoad, isExtraRoom)
+StageAPI.AddCallback("Hub2.0", STAGEAPI_POST_ROOM_LOAD, 1, function(currentRoom, isFirstLoad, isExtraRoom)
 	if currentRoom:GetType() ~= ROOMTYPE_HUBCHAMBER then
 		return
 	end
