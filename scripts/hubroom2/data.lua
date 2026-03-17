@@ -197,7 +197,9 @@ hub2.Hub2Statues = {
 		TrinketDrop = TrinketType.TRINKET_EVES_BIRD_FOOT,
 		SoulDrop = Card.CARD_SOUL_EVE,
 		ConsumableCount = 1,
-		ConsumableDrop = {Variant = PickupVariant.PICKUP_HEART, SubType = HeartSubType.HEART_BLENDED}
+		ConsumableDrop = {Variant = PickupVariant.PICKUP_HEART, SubType = HeartSubType.HEART_BLENDED},
+		StatueAnm2 = "gfx/backdrop/hubroom_2.0/eve_statue.anm2",
+		StatueAnimation = "Idle",
 	},
 	{ -- Lilith
 		StatueFrame = 21,

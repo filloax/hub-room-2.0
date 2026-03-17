@@ -1,3 +1,4 @@
+---@type { Hub2Statues: Hub2.Statue[] } | table
 local hub2 = require "scripts.hubroom2"
 
 local game = Game()
@@ -19,6 +20,7 @@ local sfx = SFXManager()
 ---@field AltStatueAnimation string?
 ---@field AltStatueFrame integer?
 ---@field AltConditions (fun(): boolean)?
+---@field DebugForce boolean?
 
 hub2.Hub2StatuesDropChance = .25
 hub2.Hub2StatuesDropSoulChance = .2 -- hub2.Hub2StatuesDropChance first has to be true before this gets called, and such the chance will be lower
@@ -39,6 +41,8 @@ function hub2.AddHub2Statue(statueData)
 	hub2.Hub2Statues[index] = statueData
 end
 
+Isaac.DebugString("HUB ROOM 2 CHANGED LOADED")
+
 StageAPI.AddCallback("Hub2.0", "POST_SPAWN_CUSTOM_GRID", 1, function(customGrid)
 	local room = game:GetRoom()
 	local spawnIndex = customGrid.GridIndex
@@ -55,13 +59,22 @@ StageAPI.AddCallback("Hub2.0", "POST_SPAWN_CUSTOM_GRID", 1, function(customGrid)
 	if not persistData.StatueId then
 		local statueId
 		while true do
-			statueId = math.random(#hub2.Hub2Statues)
+			local statueWithDebug
+			for i, statueData in ipairs(hub2.Hub2Statues) do
+				if statueData.DebugForce then
+					statueWithDebug = i
+					break
+				end
+			end
+			statueId = statueWithDebug or math.random(#hub2.Hub2Statues)
 			
 			local isDuplicate = false
-			for _,statueData in ipairs(hub2.data.run.level.hub2Statues) do
-				if statueId == statueData.StatueId then
-					isDuplicate = true
-					break
+			if not statueWithDebug then
+				for _, statueData in ipairs(hub2.data.run.level.hub2Statues) do
+					if statueId == statueData.StatueId then
+						isDuplicate = true
+						break
+					end
 				end
 			end
 			
